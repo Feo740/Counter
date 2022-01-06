@@ -1,6 +1,8 @@
 #include <SoftwareSerial.h> //библиотека для работы с RS485
 #include <ETH.h>
 #include <WiFi.h>
+//#include "HTTPSRedirect.h"
+//#include "DebugMacros.h"
 #include <AsyncMqttClient.h>
 extern "C" {
 #include "freertos/FreeRTOS.h"
@@ -29,7 +31,8 @@ TimerHandle_t wifiReconnectTimer;
 
 /////// команды
 //byte testConnect[] = { 0x00, 0x00 };
-byte testConnect[] = { 0x16, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01}; // жестко задаем адрес счетчика
+byte testConnect[] = { 0x1, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01}; // жестко задаем адрес счетчика №22
+byte testConnect1[] = { 0x24, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01}; // жестко задаем адрес счетчика №36
 byte Access[]      = { 0x00, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01};
 byte Sn[]          = { 0x00, 0x08, 0x00 }; // серийный номер
 byte Freq[]        = { 0x00, 0x08, 0x16, 0x40 }; // частота
@@ -39,7 +42,7 @@ byte Power[]       = { 0x00, 0x08, 0x16, 0x00 };// мощность
 byte Angle[]       = { 0x00, 0x08, 0x16, 0x51 }; // углы
 byte activPower[]  = { 0x00, 0x05, 0x00, 0x00 };///  суммарная энергия прямая + обратная + активная + реактивная
 byte sumPower[]    = { 0x00, 0x08, 0x11, 0x00 };
-byte odometr[]     = { 0x16, 0x05, 0x00, 0x00 }; // команда запроса общего пробега
+byte odometr[]     = { 0x1, 0x05, 0x00, 0x00 }; // команда запроса общего пробега
 byte response[19];
 int byteReceived;
 int byteSend;
@@ -146,7 +149,7 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
   // проверяем, получено ли MQTT-сообщение в топике «phone/ALL»:
   if (strcmp(topic, "phone/Counter_22") == 0) {
     if (messageTemp == "1") {
-        GetOdo();
+        GetOdo(22);
     }
   }
 
@@ -183,19 +186,24 @@ Serial.println(" ");
 Serial.println("Start_v02.01\r\n");
 }
 
-void GetOdo(){
+void GetOdo(byte number){
+  testConnect[0] = number;
+  odometr[0] = number;
+  // Опрос счетчика 22
   send(testConnect, sizeof(testConnect), response);
   for (int i=0; i<19; i++){
-  Serial.println(response[i]);
-  Serial.println(", ");
+    Serial.print(response[i]);
+    Serial.print(", ");
 }
+  Serial.println("");
   delay(1000);
   send(odometr, sizeof(odometr), response);
   for (int i=0; i<19; i++){
-Serial.println(response[i]);
-Serial.println(", ");
+    Serial.print(response[i]);
+    Serial.print(", ");
 }
-  long result_odo;
+  Serial.println("");
+  long result_odo=0;
   result_odo=response[2];
   result_odo=result_odo<<8;
   result_odo=result_odo+response[1];
@@ -207,9 +215,13 @@ Serial.println(", ");
   float r1 = r/1000.0f;
   Serial.println(r1,3);
   String var = String(r1,3);
-  //uint16_t packetIdPub2 = mqttClient.publish("ESP32_Counter/Counter_22", 1, true, var.c_str());
-
-  uint16_t packetIdPub = mqttClient.publish("ESP32Counter/Counter22", 1, true, var.c_str());
+  String var2 = "ESP32Counter/Counter"+String(number);
+  char var1[23];
+  var2.toCharArray(var1,23);
+  uint16_t packetIdPub = mqttClient.publish(var1, 1, true, var.c_str());
+  for (int i=0; i<19; i++){
+    response[i]=0;
+  }
 }
 
 void loop() {
@@ -220,7 +232,8 @@ void loop() {
                     }
                     String getS = String(incomingBytes);
                     if(getS.substring(0,5) == "init_") {
-                            GetOdo();
+                            GetOdo(36);
+                            GetOdo(22);
                           }
                           }
                           }
