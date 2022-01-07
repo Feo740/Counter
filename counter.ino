@@ -1,8 +1,7 @@
 #include <SoftwareSerial.h> //библиотека для работы с RS485
 #include <ETH.h>
 #include <WiFi.h>
-//#include "HTTPSRedirect.h"
-//#include "DebugMacros.h"
+#include <HTTPClient.h> // для работы с гугл таблицами
 #include <AsyncMqttClient.h>
 extern "C" {
 #include "freertos/FreeRTOS.h"
@@ -31,8 +30,7 @@ TimerHandle_t wifiReconnectTimer;
 
 /////// команды
 //byte testConnect[] = { 0x00, 0x00 };
-byte testConnect[] = { 0x1, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01}; // жестко задаем адрес счетчика №22
-byte testConnect1[] = { 0x24, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01}; // жестко задаем адрес счетчика №36
+byte testConnect[] = { 0x16, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01}; // жестко задаем адрес счетчика №22
 byte Access[]      = { 0x00, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01};
 byte Sn[]          = { 0x00, 0x08, 0x00 }; // серийный номер
 byte Freq[]        = { 0x00, 0x08, 0x16, 0x40 }; // частота
@@ -47,10 +45,12 @@ byte response[19];
 int byteReceived;
 int byteSend;
 int netAdr;
+String odometr_data; //строка пробега считанного со счетчика функцией GetOdo
 
 // логин и пароль сети WiFi
 const char* ssid = "MikroTik-1EA2D2";
 const char* password = "ferrari220";
+String GOOGLE_SCRIPT_ID = "AKfycbwZlKmolwNLzoAVGIlICPsqveAsDKMuwkX6kL9RIjAG0frGGkRlX_7z1S6t4kvX3stS"; //ID Google таблички
 
 IPAddress ip;
 
@@ -104,7 +104,7 @@ void onMqttConnect(bool sessionPresent) {
   // подписываем ESP32 на топики «phone/ALL», "phone/AUTO":
 // пример команды подписки
  uint16_t packetIdSub = mqttClient.subscribe("phone/Counter_22", 0);
-
+ uint16_t packetIdSub1 = mqttClient.subscribe("phone/Counter_36", 0);
 }
 
 void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
@@ -151,9 +151,13 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
     if (messageTemp == "1") {
         GetOdo(22);
     }
+    }
+    if (strcmp(topic, "phone/Counter_36") == 0) {
+      if (messageTemp == "1") {
+          GetOdo(36);
+      }
+      }
   }
-
-}
 
 void setup() {
   // настраиваем сеть
@@ -214,15 +218,42 @@ void GetOdo(byte number){
   float r = result_odo;
   float r1 = r/1000.0f;
   Serial.println(r1,3);
-  String var = String(r1,3);
+  odometr_data = String(r1);
+  odometr_data.replace(".",",");
   String var2 = "ESP32Counter/Counter"+String(number);
   char var1[23];
   var2.toCharArray(var1,23);
-  uint16_t packetIdPub = mqttClient.publish(var1, 1, true, var.c_str());
+  uint16_t packetIdPub = mqttClient.publish(var1, 1, true, odometr_data.c_str());
   for (int i=0; i<19; i++){
     response[i]=0;
   }
 }
+
+//Функция отправки данных в гугл таблицу
+void write_to_google_sheet(String params) {
+   HTTPClient http;
+   String url="https://script.google.com/macros/s/"+GOOGLE_SCRIPT_ID+"/exec?"+params;
+   //Serial.print(url);
+    Serial.println("Postring GPS data to Google Sheet");
+    //---------------------------------------------------------------------
+    //starts posting data to google sheet
+    http.begin(url.c_str());
+    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+    int httpCode = http.GET();
+    Serial.print("HTTP Status Code: ");
+    Serial.println(httpCode);
+    //---------------------------------------------------------------------
+    //getting response from google sheet
+    String payload;
+    if (httpCode > 0) {
+        //payload = http.getString();
+        Serial.println("Payload: ");//+payload);
+    }
+    //---------------------------------------------------------------------
+    http.end();
+}
+
+
 
 void loop() {
              while (Serial.available()){
@@ -233,7 +264,11 @@ void loop() {
                     String getS = String(incomingBytes);
                     if(getS.substring(0,5) == "init_") {
                             GetOdo(36);
+                            String param;
+                            param  = "box36="+odometr_data;
                             GetOdo(22);
+                            param += "&box22="+odometr_data;
+                            write_to_google_sheet(param); // отправляем строку с данными в гугл таблицу.
                           }
                           }
                           }
