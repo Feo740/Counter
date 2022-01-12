@@ -45,12 +45,20 @@ byte response[19];
 int byteReceived;
 int byteSend;
 int netAdr;
+//Массив для данных с терминала
+char incomingBytes[15];
+
+byte flag = 0;
+
 String odometr_data; //строка пробега считанного со счетчика функцией GetOdo
+// дней*(24 часов в сутках)*(60 минут в часе)*(60 секунд в минуте)*(1000 миллисекунд в секунде)
+unsigned long period_counter = 43200000;//86400000;  ///< таймер для проверки счетчика, раз в сутки
+unsigned long p_counter; ///< Техническая переменная счетчика таймера
 
 // логин и пароль сети WiFi
 const char* ssid = "MikroTik-1EA2D2";
 const char* password = "ferrari220";
-String GOOGLE_SCRIPT_ID = "AKfycbwZlKmolwNLzoAVGIlICPsqveAsDKMuwkX6kL9RIjAG0frGGkRlX_7z1S6t4kvX3stS"; //ID Google таблички
+String GOOGLE_SCRIPT_ID = "AKfycbxwurwRRddUcZicLEqtov0QGkh9jDIjnCa8uorSOR40XKirSNvfyvXQqiIgGy0tZUTZ"; //ID Google таблички
 
 IPAddress ip;
 
@@ -103,8 +111,9 @@ void WiFiEvent(WiFiEvent_t event) {
 void onMqttConnect(bool sessionPresent) {
   // подписываем ESP32 на топики «phone/ALL», "phone/AUTO":
 // пример команды подписки
- uint16_t packetIdSub = mqttClient.subscribe("phone/Counter_22", 0);
- uint16_t packetIdSub1 = mqttClient.subscribe("phone/Counter_36", 0);
+ //uint16_t packetIdSub = mqttClient.subscribe("phone/Counter22", 0);
+ //uint16_t packetIdSub1 = mqttClient.subscribe("phone/Counter40", 0);
+ uint16_t packetIdSub2 = mqttClient.subscribe("phone/Counter", 0);
 }
 
 void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
@@ -147,16 +156,12 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
     messageTemp += (char)payload[i];
   }
   // проверяем, получено ли MQTT-сообщение в топике «phone/ALL»:
-  if (strcmp(topic, "phone/Counter_22") == 0) {
+  if (strcmp(topic, "phone/Counter") == 0) {
     if (messageTemp == "1") {
-        GetOdo(22);
-    }
-    }
-    if (strcmp(topic, "phone/Counter_36") == 0) {
-      if (messageTemp == "1") {
-          GetOdo(36);
-      }
-      }
+      flag = 1;
+          }
+  }
+
   }
 
 void setup() {
@@ -190,6 +195,7 @@ Serial.println(" ");
 Serial.println("Start_v02.01\r\n");
 }
 
+// Функция считывает пробег со счетчика, формирует MQTT сообщение с пробегом, текстовую переменную odometr_data для формирования строки гугл-табли
 void GetOdo(byte number){
   testConnect[0] = number;
   odometr[0] = number;
@@ -229,12 +235,21 @@ void GetOdo(byte number){
   }
 }
 
+// на основе данных функции GetOdo, формирует полный пакет опроса счетчика
+void odo(){
+  GetOdo(40);
+  String param;
+  param  = "box40="+odometr_data;
+  GetOdo(22);
+  param += "&box22="+odometr_data;
+  write_to_google_sheet(param);
+}
 //Функция отправки данных в гугл таблицу
 void write_to_google_sheet(String params) {
    HTTPClient http;
    String url="https://script.google.com/macros/s/"+GOOGLE_SCRIPT_ID+"/exec?"+params;
    //Serial.print(url);
-    Serial.println("Postring GPS data to Google Sheet");
+    Serial.println("Posting data to Google Sheet");
     //---------------------------------------------------------------------
     //starts posting data to google sheet
     http.begin(url.c_str());
@@ -256,21 +271,31 @@ void write_to_google_sheet(String params) {
 
 
 void loop() {
-             while (Serial.available()){
-                   char incomingBytes[15];
-                   if(Serial.available()>0){
-                        Serial.readBytes(incomingBytes,10);
+
+// Снятие данных раз в сутки
+if ((millis() - p_counter) >= period_counter) {
+  p_counter = millis();
+  odo();
+}
+
+if (flag == 1){
+  odo();
+  flag = 0;
+}
+
+// Снятие показаний по команде с COM-порта
+
+   //while (Serial.available()){
+    //     char incomingBytes[15];
+  /*if(Serial.available()>0){
+    Serial.readBytes(incomingBytes,10);
                     }
-                    String getS = String(incomingBytes);
-                    if(getS.substring(0,5) == "init_") {
-                            GetOdo(36);
-                            String param;
-                            param  = "box36="+odometr_data;
-                            GetOdo(22);
-                            param += "&box22="+odometr_data;
-                            write_to_google_sheet(param); // отправляем строку с данными в гугл таблицу.
-                          }
-                          }
+  String getS = String(incomingBytes);
+  if(getS.substring(0,5) == "init_") {
+   odo();
+   getS = " ";
+ }*/
+                          //}
                           }
 
 
