@@ -225,11 +225,11 @@ void GetOdo(byte number){
   float r1 = r/1000.0f;
   Serial.println(r1,3);
   odometr_data = String(r1);
-  odometr_data.replace(".",",");
   String var2 = "ESP32Counter/Counter"+String(number);
   char var1[23];
   var2.toCharArray(var1,23);
   uint16_t packetIdPub = mqttClient.publish(var1, 1, true, odometr_data.c_str());
+  odometr_data.replace(".",",");
   for (int i=0; i<19; i++){
     response[i]=0;
   }
