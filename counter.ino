@@ -30,7 +30,7 @@ TimerHandle_t wifiReconnectTimer;
 
 /////// команды
 //byte testConnect[] = { 0x00, 0x00 };
-byte testConnect[] = { 0x16, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01}; // жестко задаем адрес счетчика №22
+byte testConnect[] = { 0x16, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01}; // пакет подключения к счетчику
 byte Access[]      = { 0x00, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01};
 byte Sn[]          = { 0x00, 0x08, 0x00 }; // серийный номер
 byte Freq[]        = { 0x00, 0x08, 0x16, 0x40 }; // частота
@@ -41,6 +41,7 @@ byte Angle[]       = { 0x00, 0x08, 0x16, 0x51 }; // углы
 byte activPower[]  = { 0x00, 0x05, 0x00, 0x00 };///  суммарная энергия прямая + обратная + активная + реактивная
 byte sumPower[]    = { 0x00, 0x08, 0x11, 0x00 };
 byte odometr[]     = { 0x1, 0x05, 0x00, 0x00 }; // команда запроса общего пробега
+byte p_v[]         = { 0x1, 0x08, 0x11, 0x11 }; // команда запроса напряжения по фазе
 byte response[19];
 int byteReceived;
 int byteSend;
@@ -51,6 +52,9 @@ char incomingBytes[15];
 byte flag = 0;
 
 String odometr_data; //строка пробега считанного со счетчика функцией GetOdo
+String voltage_data; // строка значения напряжения считанного функцией GetVoltage по фазе 1
+//String voltage_data2; // строка значения напряжения считанного функцией GetVoltage по фазе 2
+//String voltage_data3; // строка значения напряжения считанного функцией GetVoltage по фазе 3
 // дней*(24 часов в сутках)*(60 минут в часе)*(60 секунд в минуте)*(1000 миллисекунд в секунде)
 unsigned long period_counter = 43200000;//86400000;  ///< таймер для проверки счетчика, раз в сутки
 unsigned long p_counter; ///< Техническая переменная счетчика таймера
@@ -155,7 +159,7 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
     //Serial.print((char)payload[i]);
     messageTemp += (char)payload[i];
   }
-  // проверяем, получено ли MQTT-сообщение в топике «phone/ALL»:
+  // проверяем, получено ли MQTT-сообщение в топике «phone/Counter»:
   if (strcmp(topic, "phone/Counter") == 0) {
     if (messageTemp == "1") {
       flag = 1;
@@ -193,6 +197,62 @@ mqttClient.setServer(MQTT_HOST, MQTT_PORT);
 
 Serial.println(" ");
 Serial.println("Start_v02.01\r\n");
+}
+
+//Функция считывает параметр "напряжение по фазе"
+void GetVoltage (byte number, byte phase_voltage){
+  testConnect[0] = number; //определяем адрес счетчика к которому подключаемся для запрос
+  p_v[0] = number; // определеяем адрес четчика с которого считываем напряжение по фазе
+  p_v[3] = phase_voltage; // определеям фазу, по которой считываем значение
+  // Опрос счетчика
+  send(testConnect, sizeof(testConnect), response);
+  for (int i=0; i<19; i++){
+    Serial.print(response[i]);
+    Serial.print(", ");
+}
+  Serial.println("");
+  delay(1000);
+  send(p_v, sizeof(p_v), response);
+  for (int i=0; i<19; i++){
+    Serial.print(response[i]);
+    Serial.print(", ");
+}
+  Serial.println("");
+  long result_voltage=0;
+  result_voltage=response[3];
+  result_voltage=result_voltage<<8;
+  result_voltage=result_voltage+response[2];
+  float r = result_voltage;
+  float r1 = r/100.0f;
+  Serial.println(r1,3);
+  byte phase;
+  if(phase_voltage == 0x11) {phase = 1;}
+  if(phase_voltage == 0x12) {phase = 2;}
+  if(phase_voltage == 0x13) {phase = 3;}
+  voltage_data = String(r1);
+  // формируем топик ESP32Counter/Counter40/VoltagePhase1
+  String var2 = "ESP32Counter/Counter"+String(number)+"/VoltagePhase"+String(phase);
+  Serial.println("string");
+  Serial.println(var2);
+  char var1[37];
+  var2.toCharArray(var1,37);
+  uint16_t packetIdPub = mqttClient.publish(var1, 1, true, voltage_data.c_str());
+  voltage_data.replace(".",",");
+  for (int i=0; i<19; i++){
+    response[i]=0;
+   }
+}
+
+// на основе данных функции GetVoltage, формирует полный пакет опроса счетчика
+void voltage(){
+  GetVoltage(22, 0x11);
+  String param;
+  param  = "box40Voltage1="+voltage_data;
+  GetVoltage(22, 0x12);
+  param += "&box40Voltage2="+voltage_data;
+  GetVoltage(22, 0x13);
+  param += "&box40Voltage3="+voltage_data;
+  write_to_google_sheet(param);
 }
 
 // Функция считывает пробег со счетчика, формирует MQTT сообщение с пробегом, текстовую переменную odometr_data для формирования строки гугл-табли
@@ -280,23 +340,10 @@ if ((millis() - p_counter) >= period_counter) {
 
 if (flag == 1){
   odo();
+  voltage();
   flag = 0;
+  }
 }
-
-// Снятие показаний по команде с COM-порта
-
-   //while (Serial.available()){
-    //     char incomingBytes[15];
-  /*if(Serial.available()>0){
-    Serial.readBytes(incomingBytes,10);
-                    }
-  String getS = String(incomingBytes);
-  if(getS.substring(0,5) == "init_") {
-   odo();
-   getS = " ";
- }*/
-                          //}
-                          }
 
 
 /*
