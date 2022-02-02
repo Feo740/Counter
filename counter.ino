@@ -32,16 +32,17 @@ TimerHandle_t wifiReconnectTimer;
 //byte testConnect[] = { 0x00, 0x00 };
 byte testConnect[] = { 0x16, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01}; // пакет подключения к счетчику
 byte Access[]      = { 0x00, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01};
-byte Sn[]          = { 0x00, 0x08, 0x00 }; // серийный номер
-byte Freq[]        = { 0x00, 0x08, 0x16, 0x40 }; // частота
-byte Current[]     = { 0x00, 0x08, 0x16, 0x21 };//  ток
-byte Suply[]       = { 0x00, 0x08, 0x16, 0x11 }; // напряжение
-byte Power[]       = { 0x00, 0x08, 0x16, 0x00 };// мощность
-byte Angle[]       = { 0x00, 0x08, 0x16, 0x51 }; // углы
-byte activPower[]  = { 0x00, 0x05, 0x00, 0x00 };///  суммарная энергия прямая + обратная + активная + реактивная
-byte sumPower[]    = { 0x00, 0x08, 0x11, 0x00 };
+//byte Sn[]          = { 0x00, 0x08, 0x00 }; // серийный номер
+//byte Freq[]        = { 0x00, 0x08, 0x16, 0x40 }; // частота
+//byte Current[]     = { 0x00, 0x08, 0x16, 0x21 };//  ток
+//byte Suply[]       = { 0x00, 0x08, 0x16, 0x11 }; // напряжение
+//byte Power[]       = { 0x00, 0x08, 0x16, 0x00 };// мощность
+//byte Angle[]       = { 0x00, 0x08, 0x16, 0x51 }; // углы
+//byte activPower[]  = { 0x00, 0x05, 0x00, 0x00 };//  суммарная энергия прямая + обратная + активная + реактивная
+byte sumPower[]    = { 0x1, 0x08, 0x14, 0x08 };// команда запроса потребляемой мощности
 byte odometr[]     = { 0x1, 0x05, 0x00, 0x00 }; // команда запроса общего пробега
 byte p_v[]         = { 0x1, 0x08, 0x11, 0x11 }; // команда запроса напряжения по фазе
+
 byte response[19];
 int byteReceived;
 int byteSend;
@@ -53,6 +54,7 @@ byte flag = 0;
 
 String odometr_data; //строка пробега считанного со счетчика функцией GetOdo
 String voltage_data; // строка значения напряжения считанного функцией GetVoltage по фазе 1
+String sumpower_data; // строка значения суммарной мощности по всем фазам
 //String voltage_data2; // строка значения напряжения считанного функцией GetVoltage по фазе 2
 //String voltage_data3; // строка значения напряжения считанного функцией GetVoltage по фазе 3
 // дней*(24 часов в сутках)*(60 минут в часе)*(60 секунд в минуте)*(1000 миллисекунд в секунде)
@@ -197,6 +199,68 @@ mqttClient.setServer(MQTT_HOST, MQTT_PORT);
 
 Serial.println(" ");
 Serial.println("Start_v02.01\r\n");
+}
+
+//Функция считывает параметр "потребляемая мощность"
+void GetPower(byte number){
+  testConnect[0] = number; //определяем адрес счетчика к которому подключаемся для запрос
+  sumPower[0] = number; // определеяем адрес четчика с которого считываем мощность
+  send(testConnect, sizeof(testConnect), response);
+  for (int i=0; i<19; i++){
+    Serial.print(response[i]);
+    Serial.print(", ");
+}
+  Serial.println("");
+  delay(1000);
+  send(sumPower, sizeof(sumPower), response);
+  for (int i=0; i<19; i++){
+    Serial.print(response[i]);
+    Serial.print(", ");
+  }
+  //Формируем результат суммарной мощности
+  Serial.println("");
+  long result_power=0;
+  result_power = response[1];
+  result_power=result_power<<8;
+  result_power=result_power+response[4];
+  result_power=result_power<<8;
+  result_power=result_power+response[3];
+  // Формируем результат мощности по фазе 1
+  // Формируем результат мощности по фазе 2
+  // Формируем результат мощности по фазе 3
+  //Обработка результата суммарной мощности
+  float r = result_power;
+  float r1 = r/100.0f;
+  Serial.println(r1,3);
+  sumpower_data = String(r1);
+  // формируем топик ESP32Counter/Counter40/SumPower
+  String var2 = "ESP32Counter/Counter"+String(number)+"/SumPower";
+  Serial.println("string");
+  Serial.println(var2);
+  char var1[31];
+  var2.toCharArray(var1,31);
+  uint16_t packetIdPub = mqttClient.publish(var1, 1, true, sumpower_data.c_str());
+  sumpower_data.replace(".",",");
+  //Обработка результата мощности по фазе 1
+  //Обработка результата мощности по фазе 2
+  //Обработка результата мощности по фазе 3
+  
+  //обнуляем массив принятого ответа
+  for (int i=0; i<19; i++){
+    response[i]=0;
+   }
+}
+
+void power(){
+  GetPower(22);
+  String param;
+  param  = "box22SumPower="+sumpower_data;
+  //param += "&box22Power1="+voltage_data;
+  //param += "&box22Power2="+voltage_data;
+  //param += "&box22Power3="+voltage_data;
+  write_to_google_sheet(param);
+}
+
 }
 
 //Функция считывает параметр "напряжение по фазе"
