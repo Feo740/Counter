@@ -1,12 +1,17 @@
 #include <SoftwareSerial.h> //библиотека для работы с RS485
 #include <ETH.h>
 #include <WiFi.h>
+#include "DHT.h"
 #include <HTTPClient.h> // для работы с гугл таблицами
 #include <AsyncMqttClient.h>
 extern "C" {
 #include "freertos/FreeRTOS.h"
 #include "freertos/timers.h"
 }
+
+//Подключаем датчик влажности
+#define DHTPIN 14     ///< контакт, к которому подключается DHT
+#define DHTTYPE DHT22   ///<  DHT 11
 
 //-------- порты для rs 485
 #define SSerialRx        19  // Serial Receive pin RO
@@ -55,17 +60,24 @@ byte flag = 0;
 String odometr_data; //строка пробега считанного со счетчика функцией GetOdo
 String voltage_data; // строка значения напряжения считанного функцией GetVoltage по фазе 1
 String sumpower_data; // строка значения суммарной мощности по всем фазам
+String power_data1; // строка значения  мощности по фазе 1
+String power_data2; // строка значения  мощности по фазе 2
+String power_data3; // строка значения  мощности по фазе 3
+
 //String voltage_data2; // строка значения напряжения считанного функцией GetVoltage по фазе 2
 //String voltage_data3; // строка значения напряжения считанного функцией GetVoltage по фазе 3
 // дней*(24 часов в сутках)*(60 минут в часе)*(60 секунд в минуте)*(1000 миллисекунд в секунде)
 unsigned long period_counter = 43200000;//86400000;  ///< таймер для проверки счетчика, раз в сутки
 unsigned long p_counter; ///< Техническая переменная счетчика таймера
+unsigned int period_DHT22 = 60000;  ///< таймер для датчика влажности
+unsigned long dht22 = 0; ///< Техническая переменная счетчика таймера
 
 // логин и пароль сети WiFi
 const char* ssid = "MikroTik-1EA2D2";
 const char* password = "ferrari220";
 String GOOGLE_SCRIPT_ID = "AKfycbxwurwRRddUcZicLEqtov0QGkh9jDIjnCa8uorSOR40XKirSNvfyvXQqiIgGy0tZUTZ"; //ID Google таблички
 
+DHT dht(DHTPIN, DHTTYPE);
 IPAddress ip;
 
 /*!
@@ -199,6 +211,10 @@ mqttClient.setServer(MQTT_HOST, MQTT_PORT);
 
 Serial.println(" ");
 Serial.println("Start_v02.01\r\n");
+
+dht22 = millis();
+p_counter = millis();
+dht.begin();
 }
 
 //Функция считывает параметр "потребляемая мощность"
@@ -219,15 +235,34 @@ void GetPower(byte number){
   }
   //Формируем результат суммарной мощности
   Serial.println("");
-  long result_power=0;
+  long result_power=0; // переменная для общей мощности
+  long result_power1=0; // переменная для мощности по первой фазе
+  long result_power2=0; // переменная для мощности по второй фазе
+  long result_power3=0; // переменная для мощности по третьей фазе
   result_power = response[1];
   result_power=result_power<<8;
   result_power=result_power+response[4];
   result_power=result_power<<8;
   result_power=result_power+response[3];
   // Формируем результат мощности по фазе 1
+  result_power1 = response[5];
+  result_power1=result_power1<<8;
+  result_power1=result_power1+response[8];
+  result_power1=result_power1<<8;
+  result_power1=result_power1+response[7];
   // Формируем результат мощности по фазе 2
+  result_power2 = response[9];
+  result_power2=result_power2<<8;
+  result_power2=result_power2+response[12];
+  result_power2=result_power2<<8;
+  result_power2=result_power2+response[11];
   // Формируем результат мощности по фазе 3
+  result_power3 = response[13];
+  result_power3=result_power3<<8;
+  result_power3=result_power3+response[16];
+  result_power3=result_power3<<8;
+  result_power3=result_power3+response[15];
+
   //Обработка результата суммарной мощности
   float r = result_power;
   float r1 = r/100.0f;
@@ -241,10 +276,47 @@ void GetPower(byte number){
   var2.toCharArray(var1,31);
   uint16_t packetIdPub = mqttClient.publish(var1, 1, true, sumpower_data.c_str());
   sumpower_data.replace(".",",");
+
   //Обработка результата мощности по фазе 1
+  r = result_power1;
+  r1 = r/100.0f;
+  Serial.println(r1,3);
+  power_data1 = String(r1);
+  // формируем топик ESP32Counter/Counter40/PowerPhase1
+  var2 = "ESP32Counter/Counter"+String(number)+"/PowerPhase1";
+  Serial.println("string");
+  Serial.println(var2);
+  char var3[34];
+  var2.toCharArray(var3,34);
+  packetIdPub = mqttClient.publish(var3, 1, true, power_data1.c_str());
+  power_data1.replace(".",",");
+
   //Обработка результата мощности по фазе 2
+  r = result_power2;
+  r1 = r/100.0f;
+  Serial.println(r1,3);
+  power_data2 = String(r1);
+  // формируем топик ESP32Counter/Counter40/PowerPhase2
+  var2 = "ESP32Counter/Counter"+String(number)+"/PowerPhase2";
+  Serial.println("string");
+  Serial.println(var2);
+  var2.toCharArray(var3,34);
+  packetIdPub = mqttClient.publish(var3, 1, true, power_data2.c_str());
+  power_data2.replace(".",",");
+
   //Обработка результата мощности по фазе 3
-  
+  r = result_power3;
+  r1 = r/100.0f;
+  Serial.println(r1,3);
+  power_data3 = String(r1);
+  // формируем топик ESP32Counter/Counter40/PowerPhase1
+  var2 = "ESP32Counter/Counter"+String(number)+"/PowerPhase3";
+  Serial.println("string");
+  Serial.println(var2);
+  var2.toCharArray(var3,34);
+  packetIdPub = mqttClient.publish(var3, 1, true, power_data3.c_str());
+  power_data3.replace(".",",");
+
   //обнуляем массив принятого ответа
   for (int i=0; i<19; i++){
     response[i]=0;
@@ -255,12 +327,10 @@ void power(){
   GetPower(22);
   String param;
   param  = "box22SumPower="+sumpower_data;
-  //param += "&box22Power1="+voltage_data;
-  //param += "&box22Power2="+voltage_data;
-  //param += "&box22Power3="+voltage_data;
+  param += "&box22Power1="+power_data1;
+  param += "&box22Power2="+power_data2;
+  param += "&box22Power3="+power_data3;
   write_to_google_sheet(param);
-}
-
 }
 
 //Функция считывает параметр "напряжение по фазе"
@@ -402,9 +472,37 @@ if ((millis() - p_counter) >= period_counter) {
   odo();
 }
 
+// Снятие данных по таймеру с датчика влажности
+if ((millis() - dht22) >= period_DHT22) {
+  dht22 = millis();
+  float h = dht.readHumidity(); // считывание данных о температуре и влажности
+  delay(70);
+  float t = dht.readTemperature();// считываем температуру в градусах Цельсия:
+  delay(70);
+
+  // проверяем, корректно ли прочитались данные,
+  // и если нет, то выходим и пробуем снова:
+  if (isnan(h) || isnan(t)) {
+    Serial.print("Failed to read from DHT sensor!"); // "Не удалось прочитать данные с датчика DHT!"
+    } else {
+    String hum = String(h);
+    String temp = String(t);
+    Serial.print("Temp: "+ temp + " Hum: " + hum);
+    String var = "ESP32Counter/Temp"+temp;
+    char var1[17];
+    var.toCharArray(var1,17);
+    uint16_t packetIdPub = mqttClient.publish(var1, 1, true, temp.c_str());
+    var = "ESP32Counter/Hum"+hum;
+    char var2[16];
+    var.toCharArray(var2,16);
+    packetIdPub = mqttClient.publish(var2, 1, true, hum.c_str());
+
+  }
+}
 if (flag == 1){
   odo();
   voltage();
+  power();
   flag = 0;
   }
 }
