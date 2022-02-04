@@ -44,7 +44,7 @@ byte Access[]      = { 0x00, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01};
 //byte Power[]       = { 0x00, 0x08, 0x16, 0x00 };// мощность
 //byte Angle[]       = { 0x00, 0x08, 0x16, 0x51 }; // углы
 //byte activPower[]  = { 0x00, 0x05, 0x00, 0x00 };//  суммарная энергия прямая + обратная + активная + реактивная
-byte sumPower[]    = { 0x1, 0x08, 0x14, 0x08 };// команда запроса потребляемой мощности
+byte sumPower[]    = { 0x1, 0x08, 0x16, 0x08 };// команда запроса потребляемой мощности
 byte odometr[]     = { 0x1, 0x05, 0x00, 0x00 }; // команда запроса общего пробега
 byte p_v[]         = { 0x1, 0x08, 0x11, 0x11 }; // команда запроса напряжения по фазе
 
@@ -73,8 +73,10 @@ unsigned int period_DHT22 = 60000;  ///< таймер для датчика вл
 unsigned long dht22 = 0; ///< Техническая переменная счетчика таймера
 
 // логин и пароль сети WiFi
-const char* ssid = "MikroTik-1EA2D2";
-const char* password = "ferrari220";
+//const char* ssid = "MikroTik-1EA2D2";
+//const char* password = "ferrari220";
+const char* ssid = "US_WIFI";
+const char* password = "beeline2022";
 String GOOGLE_SCRIPT_ID = "AKfycbxwurwRRddUcZicLEqtov0QGkh9jDIjnCa8uorSOR40XKirSNvfyvXQqiIgGy0tZUTZ"; //ID Google таблички
 
 DHT dht(DHTPIN, DHTTYPE);
@@ -239,29 +241,29 @@ void GetPower(byte number){
   long result_power1=0; // переменная для мощности по первой фазе
   long result_power2=0; // переменная для мощности по второй фазе
   long result_power3=0; // переменная для мощности по третьей фазе
-  result_power = response[1];
+  result_power = response[3];
   result_power=result_power<<8;
-  result_power=result_power+response[4];
-  result_power=result_power<<8;
-  result_power=result_power+response[3];
+  result_power=result_power+response[2];
+  //result_power=result_power<<8;
+  //result_power=result_power+response[2];
   // Формируем результат мощности по фазе 1
-  result_power1 = response[5];
+  result_power1 = response[6];
   result_power1=result_power1<<8;
-  result_power1=result_power1+response[8];
-  result_power1=result_power1<<8;
-  result_power1=result_power1+response[7];
+  result_power1=result_power1+response[5];
+  //result_power1=result_power1<<8;
+  //result_power1=result_power1+response[5];
   // Формируем результат мощности по фазе 2
   result_power2 = response[9];
   result_power2=result_power2<<8;
-  result_power2=result_power2+response[12];
-  result_power2=result_power2<<8;
-  result_power2=result_power2+response[11];
+  result_power2=result_power2+response[8];
+  //result_power2=result_power2<<8;
+  //result_power2=result_power2+response[8];
   // Формируем результат мощности по фазе 3
-  result_power3 = response[13];
+  result_power3 = response[12];
   result_power3=result_power3<<8;
-  result_power3=result_power3+response[16];
-  result_power3=result_power3<<8;
-  result_power3=result_power3+response[15];
+  result_power3=result_power3+response[11];
+  //result_power3=result_power3<<8;
+  //result_power3=result_power3+response[11];
 
   //Обработка результата суммарной мощности
   float r = result_power;
@@ -272,8 +274,8 @@ void GetPower(byte number){
   String var2 = "ESP32Counter/Counter"+String(number)+"/SumPower";
   Serial.println("string");
   Serial.println(var2);
-  char var1[31];
-  var2.toCharArray(var1,31);
+  char var1[32];
+  var2.toCharArray(var1,32);
   uint16_t packetIdPub = mqttClient.publish(var1, 1, true, sumpower_data.c_str());
   sumpower_data.replace(".",",");
 
@@ -286,8 +288,8 @@ void GetPower(byte number){
   var2 = "ESP32Counter/Counter"+String(number)+"/PowerPhase1";
   Serial.println("string");
   Serial.println(var2);
-  char var3[34];
-  var2.toCharArray(var3,34);
+  char var3[35];
+  var2.toCharArray(var3,35);
   packetIdPub = mqttClient.publish(var3, 1, true, power_data1.c_str());
   power_data1.replace(".",",");
 
@@ -300,7 +302,7 @@ void GetPower(byte number){
   var2 = "ESP32Counter/Counter"+String(number)+"/PowerPhase2";
   Serial.println("string");
   Serial.println(var2);
-  var2.toCharArray(var3,34);
+  var2.toCharArray(var3,35);
   packetIdPub = mqttClient.publish(var3, 1, true, power_data2.c_str());
   power_data2.replace(".",",");
 
@@ -313,7 +315,7 @@ void GetPower(byte number){
   var2 = "ESP32Counter/Counter"+String(number)+"/PowerPhase3";
   Serial.println("string");
   Serial.println(var2);
-  var2.toCharArray(var3,34);
+  var2.toCharArray(var3,35);
   packetIdPub = mqttClient.publish(var3, 1, true, power_data3.c_str());
   power_data3.replace(".",",");
 
@@ -324,12 +326,12 @@ void GetPower(byte number){
 }
 
 void power(){
-  GetPower(22);
+  GetPower(40);
   String param;
-  param  = "box22SumPower="+sumpower_data;
-  param += "&box22Power1="+power_data1;
-  param += "&box22Power2="+power_data2;
-  param += "&box22Power3="+power_data3;
+  param  = "box40SumPower="+sumpower_data;
+  param += "&box40Power1="+power_data1;
+  param += "&box40Power2="+power_data2;
+  param += "&box40Power3="+power_data3;
   write_to_google_sheet(param);
 }
 
@@ -379,12 +381,12 @@ void GetVoltage (byte number, byte phase_voltage){
 
 // на основе данных функции GetVoltage, формирует полный пакет опроса счетчика
 void voltage(){
-  GetVoltage(22, 0x11);
+  GetVoltage(40, 0x11);
   String param;
   param  = "box40Voltage1="+voltage_data;
-  GetVoltage(22, 0x12);
+  GetVoltage(40, 0x12);
   param += "&box40Voltage2="+voltage_data;
-  GetVoltage(22, 0x13);
+  GetVoltage(40, 0x13);
   param += "&box40Voltage3="+voltage_data;
   write_to_google_sheet(param);
 }
@@ -488,13 +490,13 @@ if ((millis() - dht22) >= period_DHT22) {
     String hum = String(h);
     String temp = String(t);
     Serial.print("Temp: "+ temp + " Hum: " + hum);
-    String var = "ESP32Counter/Temp"+temp;
-    char var1[17];
-    var.toCharArray(var1,17);
+    String var = "ESP32Counter/Temp";
+    char var1[18];
+    var.toCharArray(var1,18);
     uint16_t packetIdPub = mqttClient.publish(var1, 1, true, temp.c_str());
-    var = "ESP32Counter/Hum"+hum;
-    char var2[16];
-    var.toCharArray(var2,16);
+    var = "ESP32Counter/Hum";
+    char var2[17];
+    var.toCharArray(var2,17);
     packetIdPub = mqttClient.publish(var2, 1, true, hum.c_str());
 
   }
