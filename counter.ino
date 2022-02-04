@@ -68,7 +68,7 @@ String power_data3; // строка значения  мощности по фа
 //String voltage_data3; // строка значения напряжения считанного функцией GetVoltage по фазе 3
 // дней*(24 часов в сутках)*(60 минут в часе)*(60 секунд в минуте)*(1000 миллисекунд в секунде)
 unsigned long period_counter = 43200000;//86400000;  ///< таймер для проверки счетчика, раз в сутки
-unsigned long p_counter; ///< Техническая переменная счетчика таймера
+unsigned long p_counter = 0; ///< Техническая переменная счетчика таймера
 unsigned int period_DHT22 = 60000;  ///< таймер для датчика влажности
 unsigned long dht22 = 0; ///< Техническая переменная счетчика таймера
 
@@ -499,7 +499,11 @@ if ((millis() - dht22) >= period_DHT22) {
     var.toCharArray(var2,17);
     packetIdPub = mqttClient.publish(var2, 1, true, hum.c_str());
 
+
+
   }
+  voltage();
+  power();
 }
 if (flag == 1){
   odo();
