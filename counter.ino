@@ -39,7 +39,7 @@ byte testConnect[] = { 0x16, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01}; //
 byte Access[]      = { 0x00, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01};
 //byte Sn[]          = { 0x00, 0x08, 0x00 }; // серийный номер
 //byte Freq[]        = { 0x00, 0x08, 0x16, 0x40 }; // частота
-//byte Current[]     = { 0x00, 0x08, 0x16, 0x21 };//  ток
+byte Current[]     = { 0x00, 0x08, 0x16, 0x21 };//  ток фаза 1
 //byte Suply[]       = { 0x00, 0x08, 0x16, 0x11 }; // напряжение
 //byte Power[]       = { 0x00, 0x08, 0x16, 0x00 };// мощность
 //byte Angle[]       = { 0x00, 0x08, 0x16, 0x51 }; // углы
@@ -58,7 +58,8 @@ char incomingBytes[15];
 byte flag = 0;
 
 String odometr_data; //строка пробега считанного со счетчика функцией GetOdo
-String voltage_data; // строка значения напряжения считанного функцией GetVoltage по фазе 1
+String voltage_data; // строка значения напряжения считанного функцией GetVoltage по фазе
+String current_data; // строка значения тока считанного функцией GetCurrent по фазе
 String sumpower_data; // строка значения суммарной мощности по всем фазам
 String power_data1; // строка значения  мощности по фазе 1
 String power_data2; // строка значения  мощности по фазе 2
@@ -75,8 +76,10 @@ unsigned long dht22 = 0; ///< Техническая переменная сче
 // логин и пароль сети WiFi
 //const char* ssid = "MikroTik-1EA2D2";
 //const char* password = "ferrari220";
-const char* ssid = "US_WIFI";
-const char* password = "beeline2022";
+//const char* ssid = "US_WIFI";
+//const char* password = "beeline2022";
+const char* ssid = "4G-UFI-3a43";
+const char* password = "garage44";
 String GOOGLE_SCRIPT_ID = "AKfycbxwurwRRddUcZicLEqtov0QGkh9jDIjnCa8uorSOR40XKirSNvfyvXQqiIgGy0tZUTZ"; //ID Google таблички
 
 DHT dht(DHTPIN, DHTTYPE);
@@ -335,6 +338,47 @@ void power(){
   write_to_google_sheet(param);
 }
 
+////Функция считывает параметр ток по определенной фазе
+void GetCurrent (byte number){
+  testConnect[0] = number; //определяем адрес счетчика к которому подключаемся для запрос
+  Current[0] = number; // определеяем адрес четчика с которого считываем ток
+  send(testConnect, sizeof(testConnect), response);
+  for (int i=0; i<19; i++){
+    Serial.print(response[i]);
+    Serial.print(", ");
+}
+  Serial.println("");
+  delay(1000);
+  send(Current, sizeof(Current), response);
+  for (int i=0; i<19; i++){
+    Serial.print(response[i]);
+    Serial.print(", ");
+}
+  Serial.println("");
+  //Выделяем значение тока по фазе 1
+  long result_current=0;
+  result_current=response[3];
+  result_current=result_current<<8;
+  result_current=result_current+response[2];
+  float r = result_current;
+  float r1 = r/1000.0f;
+  Serial.println(r1,3);
+  current_data = String(r1);
+  // формируем топик ESP32Counter/Counter40/CurrentPhase1
+  String var2 = "ESP32Counter/Counter"+String(number)+"/CurrentPhase1";
+  Serial.println("string");
+  Serial.println(var2);
+  char var1[37];
+  var2.toCharArray(var1,37);
+  uint16_t packetIdPub = mqttClient.publish(var1, 1, true, current_data.c_str());
+
+  //
+
+  for (int i=0; i<19; i++){
+    response[i]=0;
+   }
+}
+
 //Функция считывает параметр "напряжение по фазе"
 void GetVoltage (byte number, byte phase_voltage){
   testConnect[0] = number; //определяем адрес счетчика к которому подключаемся для запрос
@@ -379,16 +423,22 @@ void GetVoltage (byte number, byte phase_voltage){
    }
 }
 
+// на основе данных функции GetCurrent, формирует полный пакет опроса счетчика
+void current(){
+  GetCurrent(22);
+  GetCurrent(85);
+}
+
 // на основе данных функции GetVoltage, формирует полный пакет опроса счетчика
 void voltage(){
-  GetVoltage(40, 0x11);
-  String param;
-  param  = "box40Voltage1="+voltage_data;
-  GetVoltage(40, 0x12);
-  param += "&box40Voltage2="+voltage_data;
-  GetVoltage(40, 0x13);
-  param += "&box40Voltage3="+voltage_data;
-  write_to_google_sheet(param);
+  GetVoltage(22, 0x11);
+  //String param;
+  //param  = "box40Voltage1="+voltage_data;
+  GetVoltage(22, 0x12);
+  //param += "&box40Voltage2="+voltage_data;
+  GetVoltage(22, 0x13);
+  //param += "&box40Voltage3="+voltage_data;
+  //write_to_google_sheet(param);
 }
 
 // Функция считывает пробег со счетчика, формирует MQTT сообщение с пробегом, текстовую переменную odometr_data для формирования строки гугл-табли
@@ -436,8 +486,8 @@ void odo(){
   GetOdo(40);
   String param;
   param  = "box40="+odometr_data;
-  GetOdo(22);
-  param += "&box22="+odometr_data;
+  GetOdo(85);
+  param += "&box85="+odometr_data;
   write_to_google_sheet(param);
 }
 //Функция отправки данных в гугл таблицу
@@ -477,6 +527,10 @@ if ((millis() - p_counter) >= period_counter) {
 // Снятие данных по таймеру с датчика влажности
 if ((millis() - dht22) >= period_DHT22) {
   dht22 = millis();
+
+  voltage();
+  current();
+  
   float h = dht.readHumidity(); // считывание данных о температуре и влажности
   delay(70);
   float t = dht.readTemperature();// считываем температуру в градусах Цельсия:
@@ -504,7 +558,7 @@ if ((millis() - dht22) >= period_DHT22) {
 if (flag == 1){
   odo();
   voltage();
-  power();
+  current();
   flag = 0;
   }
 }
