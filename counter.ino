@@ -372,7 +372,39 @@ void GetCurrent (byte number){
   var2.toCharArray(var1,37);
   uint16_t packetIdPub = mqttClient.publish(var1, 1, true, current_data.c_str());
 
-  //
+  //Выделяем значение тока по фазе 2
+  result_current=0;
+  result_current=response[6];
+  result_current=result_current<<8;
+  result_current=result_current+response[5];
+   r = result_current;
+   r1 = r/1000.0f;
+  Serial.println(r1,3);
+  current_data = String(r1);
+  // формируем топик ESP32Counter/Counter40/CurrentPhase1
+  var2 = "ESP32Counter/Counter"+String(number)+"/CurrentPhase2";
+  Serial.println("string");
+  Serial.println(var2);
+  var1[37];
+  var2.toCharArray(var1,37);
+  packetIdPub = mqttClient.publish(var1, 1, true, current_data.c_str());
+
+  //Выделяем значение тока по фазе 3
+  result_current=0;
+  result_current=response[9];
+  result_current=result_current<<8;
+  result_current=result_current+response[8];
+   r = result_current;
+   r1 = r/1000.0f;
+  Serial.println(r1,3);
+  current_data = String(r1);
+  // формируем топик ESP32Counter/Counter40/CurrentPhase1
+  var2 = "ESP32Counter/Counter"+String(number)+"/CurrentPhase3";
+  Serial.println("string");
+  Serial.println(var2);
+  var1[37];
+  var2.toCharArray(var1,37);
+  packetIdPub = mqttClient.publish(var1, 1, true, current_data.c_str());
 
   for (int i=0; i<19; i++){
     response[i]=0;
@@ -425,18 +457,19 @@ void GetVoltage (byte number, byte phase_voltage){
 
 // на основе данных функции GetCurrent, формирует полный пакет опроса счетчика
 void current(){
-  GetCurrent(22);
+  GetCurrent(40);
+  delay(500);
   GetCurrent(85);
 }
 
 // на основе данных функции GetVoltage, формирует полный пакет опроса счетчика
 void voltage(){
-  GetVoltage(22, 0x11);
+  GetVoltage(40, 0x11);
   //String param;
   //param  = "box40Voltage1="+voltage_data;
-  GetVoltage(22, 0x12);
+  GetVoltage(40, 0x12);
   //param += "&box40Voltage2="+voltage_data;
-  GetVoltage(22, 0x13);
+  GetVoltage(40, 0x13);
   //param += "&box40Voltage3="+voltage_data;
   //write_to_google_sheet(param);
 }
@@ -486,6 +519,7 @@ void odo(){
   GetOdo(40);
   String param;
   param  = "box40="+odometr_data;
+  delay(500);
   GetOdo(85);
   param += "&box85="+odometr_data;
   write_to_google_sheet(param);
@@ -529,8 +563,9 @@ if ((millis() - dht22) >= period_DHT22) {
   dht22 = millis();
 
   voltage();
+  delay(500);
   current();
-  
+
   float h = dht.readHumidity(); // считывание данных о температуре и влажности
   delay(70);
   float t = dht.readTemperature();// считываем температуру в градусах Цельсия:
@@ -556,8 +591,7 @@ if ((millis() - dht22) >= period_DHT22) {
 
 
   }
-  voltage();
-  power();
+
 }
 if (flag == 1){
   odo();
