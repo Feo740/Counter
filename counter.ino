@@ -141,6 +141,7 @@ void onMqttConnect(bool sessionPresent) {
  //uint16_t packetIdSub = mqttClient.subscribe("phone/Counter22", 0);
  //uint16_t packetIdSub1 = mqttClient.subscribe("phone/Counter40", 0);
  uint16_t packetIdSub2 = mqttClient.subscribe("phone/Counter", 0);
+ uint16_t packetIdSub3 = mqttClient.subscribe("phone/Went", 0);
 }
 
 void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
@@ -617,17 +618,19 @@ if ((millis() - dht22) >= period_DHT22) {
 if (isnan(h) || isnan(t)) {
   Serial.print("Failed to read from DHT2 sensor!"); // "Не удалось прочитать данные с датчика DHT!"
   } else {
-  String hum2 = String(h);
-  String temp2 = String(t);
-  Serial.print("Temp2: "+ temp2 + " Hum2: " + hum2);
-  String tar = "ESP32Counter/Temp2";
-  char tar1[18];
-  tar.toCharArray(tar1,18);
-  uint16_t packetIdPub = mqttClient.publish(tar1, 1, true, temp2.c_str());
-  tar = "ESP32Counter/Hum2";
-  char tar2[17];
-  tar.toCharArray(tar2,17);
-  packetIdPub = mqttClient.publish(tar2, 1, true, hum2.c_str());
+  String hum = String(h);
+  String temp = String(t);
+  Serial.print("Temp2: "+ temp + " Hum2: " + hum);
+  String var = "ESP32Counter/Temp2";
+  Serial.println(var);
+  char var1[18];
+  var.toCharArray(var1,18);
+  uint16_t packetIdPub = mqttClient.publish(var1, 1, true, temp.c_str());
+  var = "ESP32Counter/Hum2";
+  Serial.println(var);
+  char var2[17];
+  var.toCharArray(var2,17);
+  packetIdPub = mqttClient.publish(var2, 1, true, hum.c_str());
   }
 // конец обработки датчика 2
 }
