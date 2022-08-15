@@ -11,7 +11,9 @@ extern "C" {
 
 //Подключаем датчик влажности
 #define DHTPIN 14     ///< контакт, к которому подключается DHT
+#define DHTPIN2 23     ///< контакт, к которому подключается DHT
 #define DHTTYPE DHT22   ///<  DHT 11
+#define RELAY 22  // контакт реле включения вентиляции
 
 //-------- порты для rs 485
 #define SSerialRx        19  // Serial Receive pin RO
@@ -56,6 +58,7 @@ int netAdr;
 char incomingBytes[15];
 
 byte flag = 0;
+byte relay_flag = 1;
 
 String odometr_data; //строка пробега считанного со счетчика функцией GetOdo
 String voltage_data; // строка значения напряжения считанного функцией GetVoltage по фазе
@@ -70,7 +73,7 @@ String power_data3; // строка значения  мощности по фа
 // дней*(24 часов в сутках)*(60 минут в часе)*(60 секунд в минуте)*(1000 миллисекунд в секунде)
 unsigned long period_counter = 43200000;//86400000;  ///< таймер для проверки счетчика, раз в сутки
 unsigned long p_counter = 0; ///< Техническая переменная счетчика таймера
-unsigned int period_DHT22 = 60000;  ///< таймер для датчика влажности
+unsigned int period_DHT22 = 6000;  ///< таймер для датчика влажности
 unsigned long dht22 = 0; ///< Техническая переменная счетчика таймера
 
 // логин и пароль сети WiFi
@@ -83,6 +86,7 @@ const char* password = "garage44";
 String GOOGLE_SCRIPT_ID = "AKfycbxwurwRRddUcZicLEqtov0QGkh9jDIjnCa8uorSOR40XKirSNvfyvXQqiIgGy0tZUTZ"; //ID Google таблички
 
 DHT dht(DHTPIN, DHTTYPE);
+DHT dht2(DHTPIN2, DHTTYPE);
 IPAddress ip;
 
 /*!
@@ -184,6 +188,15 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
       flag = 1;
           }
   }
+  // проверяем, получено ли MQTT-сообщение в топике "phone/Went"
+  if (strcmp(topic, "phone/Went") == 0) {
+    if (messageTemp == "1") {
+      flag = 1;
+          }
+    if (messageTemp == "0") {
+            flag = 0;
+                }
+  }
 
   }
 
@@ -220,6 +233,8 @@ Serial.println("Start_v02.01\r\n");
 dht22 = millis();
 p_counter = millis();
 dht.begin();
+dht2.begin();
+pinMode(RELAY,OUTPUT);
 }
 
 //Функция считывает параметр "потребляемая мощность"
@@ -566,15 +581,16 @@ if ((millis() - dht22) >= period_DHT22) {
   delay(500);
   current();
 
-  float h = dht.readHumidity(); // считывание данных о температуре и влажности
+// обработка датчика 1
+  float h = dht.readHumidity(); // считывание данных о температуре и влажности датчика1
   delay(70);
-  float t = dht.readTemperature();// считываем температуру в градусах Цельсия:
+  float t = dht.readTemperature();// считываем температуру в градусах Цельсия с датчика1
   delay(70);
 
   // проверяем, корректно ли прочитались данные,
   // и если нет, то выходим и пробуем снова:
   if (isnan(h) || isnan(t)) {
-    Serial.print("Failed to read from DHT sensor!"); // "Не удалось прочитать данные с датчика DHT!"
+    Serial.print("Failed to read from DHT1 sensor!"); // "Не удалось прочитать данные с датчика DHT!"
     } else {
     String hum = String(h);
     String temp = String(t);
@@ -587,11 +603,33 @@ if ((millis() - dht22) >= period_DHT22) {
     char var2[17];
     var.toCharArray(var2,17);
     packetIdPub = mqttClient.publish(var2, 1, true, hum.c_str());
-
-
-
   }
+// конец обработки датчика 1
 
+// обработка датчика 2
+    h = dht2.readHumidity(); // считывание данных о температуре и влажности датчика1
+    delay(70);
+    t = dht2.readTemperature();// считываем температуру в градусах Цельсия с датчика1
+    delay(70);
+
+// проверяем, корректно ли прочитались данные,
+// и если нет, то выходим и пробуем снова:
+if (isnan(h) || isnan(t)) {
+  Serial.print("Failed to read from DHT2 sensor!"); // "Не удалось прочитать данные с датчика DHT!"
+  } else {
+  String hum2 = String(h);
+  String temp2 = String(t);
+  Serial.print("Temp2: "+ temp2 + " Hum2: " + hum2);
+  String var = "ESP32Counter/Temp2";
+  char var1[18];
+  var.toCharArray(var1,18);
+  uint16_t packetIdPub = mqttClient.publish(var1, 1, true, temp2.c_str());
+  var = "ESP32Counter/Hum2";
+  char var2[17];
+  var.toCharArray(var2,17);
+  packetIdPub = mqttClient.publish(var2, 1, true, hum2.c_str());
+  }
+// конец обработки датчика 2
 }
 if (flag == 1){
   odo();
@@ -599,6 +637,13 @@ if (flag == 1){
   current();
   flag = 0;
   }
+// проверка флага состояния включения вентиляции
+if (relay_flag ==1){
+  digitalWrite(RELAY,HIGH); //если флаг 1 реле выключить
+}
+if (relay_flag ==0){
+  digitalWrite(RELAY,LOW); // если флаг 0 реле включить
+}
 }
 
 
