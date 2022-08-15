@@ -607,9 +607,9 @@ if ((millis() - dht22) >= period_DHT22) {
 // конец обработки датчика 1
 
 // обработка датчика 2
-    h = dht2.readHumidity(); // считывание данных о температуре и влажности датчика1
+    h = dht2.readHumidity(); // считывание данных о температуре и влажности датчика2
     delay(70);
-    t = dht2.readTemperature();// считываем температуру в градусах Цельсия с датчика1
+    t = dht2.readTemperature();// считываем температуру в градусах Цельсия с датчика2
     delay(70);
 
 // проверяем, корректно ли прочитались данные,
@@ -620,14 +620,14 @@ if (isnan(h) || isnan(t)) {
   String hum2 = String(h);
   String temp2 = String(t);
   Serial.print("Temp2: "+ temp2 + " Hum2: " + hum2);
-  String var = "ESP32Counter/Temp2";
-  char var1[18];
-  var.toCharArray(var1,18);
-  uint16_t packetIdPub = mqttClient.publish(var1, 1, true, temp2.c_str());
-  var = "ESP32Counter/Hum2";
-  char var2[17];
-  var.toCharArray(var2,17);
-  packetIdPub = mqttClient.publish(var2, 1, true, hum2.c_str());
+  String tar = "ESP32Counter/Temp2";
+  char tar1[18];
+  tar.toCharArray(tar1,18);
+  uint16_t packetIdPub = mqttClient.publish(tar1, 1, true, temp2.c_str());
+  tar = "ESP32Counter/Hum2";
+  char tar2[17];
+  tar.toCharArray(tar2,17);
+  packetIdPub = mqttClient.publish(tar2, 1, true, hum2.c_str());
   }
 // конец обработки датчика 2
 }
