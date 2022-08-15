@@ -624,12 +624,12 @@ if (isnan(h) || isnan(t)) {
   String var = "ESP32Counter/Temp2";
   Serial.println(var);
   char var1[19];
-  var.toCharArray(var1,18);
+  var.toCharArray(var1,19);
   uint16_t packetIdPub = mqttClient.publish(var1, 1, true, temp.c_str());
   var = "ESP32Counter/Hum2";
   Serial.println(var);
   char var2[18];
-  var.toCharArray(var2,17);
+  var.toCharArray(var2,18);
   packetIdPub = mqttClient.publish(var2, 1, true, hum.c_str());
   }
 // конец обработки датчика 2
