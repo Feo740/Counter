@@ -192,10 +192,10 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
   // проверяем, получено ли MQTT-сообщение в топике "phone/Went"
   if (strcmp(topic, "phone/Went") == 0) {
     if (messageTemp == "1") {
-      flag = 1;
+      relay_flag = 1;
           }
     if (messageTemp == "0") {
-            flag = 0;
+            relay_flag = 0;
                 }
   }
 
