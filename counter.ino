@@ -5,6 +5,7 @@
 #include <HTTPClient.h> // для работы с гугл таблицами
 #include <AsyncMqttClient.h>
 #include "GyverStepper2.h" // для работы с шаговым мотором
+#include "OneWire.h" // библиотека для работы с 18в20
 extern "C" {
 #include "freertos/FreeRTOS.h"
 #include "freertos/timers.h"
@@ -14,6 +15,8 @@ extern "C" {
 #define DHTPIN 14     ///< контакт, к которому подключается DHT
 #define DHTPIN2 23     ///< контакт, к которому подключается DHT
 #define DHTTYPE DHT22   ///<  DHT 11
+#define TEMPSENSORPIN 15 ///< контакт для подключения датчика температуры
+OneWire ds(TEMPSENSORPIN);
 #define RELAY 22  // контакт реле включения вентиляции
 
 //-------- порты для rs 485
@@ -27,7 +30,8 @@ SoftwareSerial RS485Serial(SSerialRx, SSerialTx); // Rx, Tx
 #define RS485Transmit    HIGH
 #define RS485Receive     LOW
 // Определения для сервера MQTT
-#define MQTT_HOST IPAddress(212, 92, 170, 246) ///< адрес сервера MQTT
+//#define MQTT_HOST IPAddress(212, 92, 170, 246) ///< адрес сервера MQTT
+#define MQTT_HOST IPAddress(192, 168, 1, 196) ///< адрес сервера MQTT
 #define MQTT_PORT 1883 ///< порт сервера MQTT
 // концевик заслонки вентиляции
 #define LIMSW_X 16
@@ -54,7 +58,7 @@ byte Current[]     = { 0x00, 0x08, 0x16, 0x21 };//  ток фаза 1
 byte sumPower[]    = { 0x1, 0x08, 0x16, 0x08 };// команда запроса потребляемой мощности
 byte odometr[]     = { 0x1, 0x05, 0x00, 0x00 }; // команда запроса общего пробега
 byte p_v[]         = { 0x1, 0x08, 0x11, 0x11 }; // команда запроса напряжения по фазе
-
+byte sensor_oil[]  = { 0x28, 0x4D, 0x82, 0x5, 0x5, 0x0, 0x0, 0xDD };// датчик температуры масла
 byte response[19];
 int byteReceived;
 int byteSend;
@@ -80,7 +84,11 @@ String power_data3; // строка значения  мощности по фа
 unsigned long period_counter = 43200000;//86400000;  ///< таймер для проверки счетчика, раз в сутки
 unsigned long p_counter = 0; ///< Техническая переменная счетчика таймера
 unsigned int period_DHT22 = 6000;  ///< таймер для датчика влажности
+unsigned int period_18b20_1 = 6000;  ///< таймер для первого датчика температуры
+unsigned int period_18b20_read = 500; ///< таймер ожидания преобразования в датчике 18b20
 unsigned long dht22 = 0; ///< Техническая переменная счетчика таймера
+unsigned long T18b20_1 = 0; ///< Техническая переменная счетчика таймера
+unsigned long read_18b20 = 0; ///< Техническая переменная счетчика таймера
 
 // логин и пароль сети WiFi
 //const char* ssid = "MikroTik-1EA2D2";
@@ -88,7 +96,7 @@ unsigned long dht22 = 0; ///< Техническая переменная сче
 //const char* ssid = "US_WIFI";
 //const char* password = "beeline2022";
 const char* ssid = "4G-UFI-3a43";
-const char* password = "garage44";
+const char* password = "1234567890";
 String GOOGLE_SCRIPT_ID = "AKfycbxwurwRRddUcZicLEqtov0QGkh9jDIjnCa8uorSOR40XKirSNvfyvXQqiIgGy0tZUTZ"; //ID Google таблички
 
 DHT dht(DHTPIN, DHTTYPE);
@@ -144,10 +152,7 @@ void WiFiEvent(WiFiEvent_t event) {
 // в этом фрагменте добавляем топики,
 // на которые будет подписываться ESP32:
 void onMqttConnect(bool sessionPresent) {
-  // подписываем ESP32 на топики «phone/ALL», "phone/AUTO":
-// пример команды подписки
- //uint16_t packetIdSub = mqttClient.subscribe("phone/Counter22", 0);
- //uint16_t packetIdSub1 = mqttClient.subscribe("phone/Counter40", 0);
+  // подписываем ESP32 на топики:
  uint16_t packetIdSub2 = mqttClient.subscribe("phone/Counter", 0); //топик счетчика электроэнергии
  uint16_t packetIdSub3 = mqttClient.subscribe("phone/Went", 0);//топик мотора вытяжки
  uint16_t packetIdSub4 = mqttClient.subscribe("phone/Went_valve", 0);//топик клапана вытяжки
@@ -600,7 +605,62 @@ void write_to_google_sheet(String params) {
     http.end();
 }
 
+void Read_18b20(byte addr[8], int t){
+  //переменные для датчиков температуры
+  byte i;
+  byte present = 0;
+  byte type_s;
+  byte data[12];
+  float celsius, fahrenheit;
+  String result;
 
+
+  ds.reset();
+  ds.select(addr);
+  ds.write(0x44, 0);        // признак выбора режима питания 0-внешнее 1-паразитное
+  //delay(1000);
+  if ((millis() - read_18b20) >= period_18b20_read) {
+
+  read_18b20 = millis(); // обнуляем таймер на полсекунды - обработка датчиком
+
+
+  present = ds.reset();
+  ds.select(addr);
+  ds.write(0xBE);         // читаем результат
+
+  for ( i = 0; i < 9; i++) {           // нам требуется 9 байтов
+    data[i] = ds.read();
+  }
+
+  int16_t raw = (data[1] << 8) | data[0];
+  if (type_s) {
+    raw = raw << 3; // 9 bit resolution default
+    if (data[7] == 0x10) {
+      // "count remain" gives full 12 bit resolution
+      raw = (raw & 0xFFF0) + 12 - data[6];
+    }
+  } else {
+    byte cfg = (data[4] & 0x60);
+    // at lower res, the low bits are undefined, so let's zero them
+    if (cfg == 0x00) raw = raw & ~7;  // 9 bit resolution, 93.75 ms
+    else if (cfg == 0x20) raw = raw & ~3; // 10 bit res, 187.5 ms
+    else if (cfg == 0x40) raw = raw & ~1; // 11 bit res, 375 ms
+    //// default is 12 bit resolution, 750 ms conversion time
+  }
+  celsius = (float)raw / 16.0;
+  fahrenheit = celsius * 1.8 + 32.0;
+    if (flag == 1) {
+  result = String(celsius);
+} else{
+  result = "**.**";
+}
+
+if (t == 15){
+  uint16_t packetIdPub2 = mqttClient.publish("Counter/oil_temp", 1, true, result.c_str());
+}
+  return;
+}
+}
 
 void loop() {
   //работа с заслонкой
@@ -609,6 +669,12 @@ void loop() {
   if(stepper.ready()){
   stepper.disable();
   }
+
+  // Читаем датчик 18b20
+if ((millis() - T18b20_1) >= period_18b20_1) {
+    Read_18b20(sensor_oil, 15);
+    T18b20_1 = millis(); // обнуляем таймер опроса датчика
+          }
 
 // Снятие данных раз в сутки
 if ((millis() - p_counter) >= period_counter) {
