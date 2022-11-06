@@ -4,6 +4,7 @@
 #include "DHT.h"
 #include <HTTPClient.h> // для работы с гугл таблицами
 #include <AsyncMqttClient.h>
+#include "GyverStepper2.h" // для работы с шаговым мотором
 extern "C" {
 #include "freertos/FreeRTOS.h"
 #include "freertos/timers.h"
@@ -28,6 +29,10 @@ SoftwareSerial RS485Serial(SSerialRx, SSerialTx); // Rx, Tx
 // Определения для сервера MQTT
 #define MQTT_HOST IPAddress(212, 92, 170, 246) ///< адрес сервера MQTT
 #define MQTT_PORT 1883 ///< порт сервера MQTT
+// концевик заслонки вентиляции
+#define LIMSW_X 16
+long target = 0; // количество шагов до момента открытия заслонки
+
 
 /// создаем объекты для управления MQTT-клиентом:
 ///Создаем объект для управления MQTT-клиентом и таймеры, которые понадобятся для повторного подключения к MQTT-брокеру или WiFi-роутеру, если связь вдруг оборвется.
@@ -54,6 +59,7 @@ byte response[19];
 int byteReceived;
 int byteSend;
 int netAdr;
+int valve_angle; //значение угла открытия вентиляционной заслонки 0-100%
 //Массив для данных с терминала
 char incomingBytes[15];
 
@@ -88,6 +94,8 @@ String GOOGLE_SCRIPT_ID = "AKfycbxwurwRRddUcZicLEqtov0QGkh9jDIjnCa8uorSOR40XKirS
 DHT dht(DHTPIN, DHTTYPE);
 DHT dht2(DHTPIN2, DHTTYPE);
 IPAddress ip;
+
+GStepper2<STEPPER4WIRE> stepper(2048, 19, 18, 5, 17); // кол-во шагов,пины шаговика
 
 /*!
  \brief функция подключения к сети wifi
@@ -140,8 +148,9 @@ void onMqttConnect(bool sessionPresent) {
 // пример команды подписки
  //uint16_t packetIdSub = mqttClient.subscribe("phone/Counter22", 0);
  //uint16_t packetIdSub1 = mqttClient.subscribe("phone/Counter40", 0);
- uint16_t packetIdSub2 = mqttClient.subscribe("phone/Counter", 0);
- uint16_t packetIdSub3 = mqttClient.subscribe("phone/Went", 0);
+ uint16_t packetIdSub2 = mqttClient.subscribe("phone/Counter", 0); //топик счетчика электроэнергии
+ uint16_t packetIdSub3 = mqttClient.subscribe("phone/Went", 0);//топик мотора вытяжки
+ uint16_t packetIdSub4 = mqttClient.subscribe("phone/Went_valve", 0);//топик клапана вытяжки
 }
 
 void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
@@ -199,12 +208,15 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
                 }
   }
 
+  // проверяем, получено ли MQTT-сообщение в топике "phone/Went_valve"
+  if (strcmp(topic, "phone/Went_valve") == 0) {
+    valve_angle=messageTemp.toInt();
+  }
+
   }
 
 void setup() {
   // настраиваем сеть
-
-
 RS485Serial.begin(9600);
 Serial.begin(9600);
 // 5 пин в режим выхода
@@ -218,7 +230,6 @@ mqttReconnectTimer = xTimerCreate("mqttTimer", pdMS_TO_TICKS(2000), pdFALSE, (vo
 wifiReconnectTimer = xTimerCreate("wifiTimer", pdMS_TO_TICKS(2000), pdFALSE, (void*)0, reinterpret_cast<TimerCallbackFunction_t>(connectToWifi));
 connectToWifi();
 WiFi.onEvent(WiFiEvent);
-
 
 mqttClient.onConnect(onMqttConnect);
 mqttClient.onDisconnect(onMqttDisconnect);
@@ -236,6 +247,31 @@ p_counter = millis();
 dht.begin();
 dht2.begin();
 pinMode(RELAY,OUTPUT);
+
+// пуллапим. Кнопки замыкают на GND
+pinMode(LIMSW_X, INPUT_PULLUP);
+//stepper.setRunMode(FOLLOW_POS);
+homing(); // по умолчанию заслонку закрываем
+}
+
+//Функция закрытия заслонки
+void homing() {
+  if (digitalRead(LIMSW_X)) {       // если концевик X не нажат
+    stepper.setSpeed(-100);       // ось Х, -10 шаг/сек
+    while (digitalRead(LIMSW_X)) {  // пока кнопка не нажата
+      stepper.tick();               // крутим
+    }
+    // кнопка нажалась - покидаем цикл
+    stepper.disable();                // тормозим, приехали
+    stepper.reset(); // сбросить текущую позицию в 0
+  }
+}
+
+//Функция открытия заслонки
+void vent_open(){
+  target = valve_angle*2,5;
+  stepper.setTarget(target);
+  stepper.setMaxSpeed(100);
 }
 
 //Функция считывает параметр "потребляемая мощность"
@@ -567,6 +603,12 @@ void write_to_google_sheet(String params) {
 
 
 void loop() {
+  //работа с заслонкой
+  vent_open();
+  stepper.tick();
+  if(stepper.ready()){
+  stepper.disable();
+  }
 
 // Снятие данных раз в сутки
 if ((millis() - p_counter) >= period_counter) {
