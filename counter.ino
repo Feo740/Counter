@@ -31,7 +31,7 @@ SoftwareSerial RS485Serial(SSerialRx, SSerialTx); // Rx, Tx
 #define RS485Receive     LOW
 // Определения для сервера MQTT
 //#define MQTT_HOST IPAddress(212, 92, 170, 246) ///< адрес сервера MQTT
-#define MQTT_HOST IPAddress(192, 168, 1, 196) ///< адрес сервера MQTT
+#define MQTT_HOST IPAddress(192, 168, 100, 196) ///< адрес сервера MQTT
 #define MQTT_PORT 1883 ///< порт сервера MQTT
 // концевик заслонки вентиляции
 #define LIMSW_X 16
