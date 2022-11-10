@@ -33,6 +33,8 @@ SoftwareSerial RS485Serial(SSerialRx, SSerialTx); // Rx, Tx
 //#define MQTT_HOST IPAddress(212, 92, 170, 246) ///< адрес сервера MQTT
 #define MQTT_HOST IPAddress(192, 168, 100, 196) ///< адрес сервера MQTT
 #define MQTT_PORT 1883 ///< порт сервера MQTT
+#define MQTT_USERNAME "feo"
+#define MQTT_PASSWORD "ferrari220"
 // концевик заслонки вентиляции
 #define LIMSW_X 16
 long target = 0; // количество шагов до момента открытия заслонки
@@ -58,7 +60,7 @@ byte Current[]     = { 0x00, 0x08, 0x16, 0x21 };//  ток фаза 1
 byte sumPower[]    = { 0x1, 0x08, 0x16, 0x08 };// команда запроса потребляемой мощности
 byte odometr[]     = { 0x1, 0x05, 0x00, 0x00 }; // команда запроса общего пробега
 byte p_v[]         = { 0x1, 0x08, 0x11, 0x11 }; // команда запроса напряжения по фазе
-byte sensor_oil[]  = { 0x28, 0x4D, 0x82, 0x5, 0x5, 0x0, 0x0, 0xDD };// датчик температуры масла
+byte sensor_oil[]  = { 0x28, 0x90, 0xC3, 0x5, 0x5, 0x0, 0x0, 0x77 };// датчик температуры масла
 byte response[19];
 int byteReceived;
 int byteSend;
@@ -103,7 +105,7 @@ DHT dht(DHTPIN, DHTTYPE);
 DHT dht2(DHTPIN2, DHTTYPE);
 IPAddress ip;
 
-GStepper2<STEPPER4WIRE> stepper(2048, 19, 18, 5, 17); // кол-во шагов,пины шаговика
+GStepper2<STEPPER4WIRE> stepper(2048, 33, 25, 26, 27); // кол-во шагов,пины шаговика
 
 /*!
  \brief функция подключения к сети wifi
@@ -152,6 +154,9 @@ void WiFiEvent(WiFiEvent_t event) {
 // в этом фрагменте добавляем топики,
 // на которые будет подписываться ESP32:
 void onMqttConnect(bool sessionPresent) {
+  Serial.println("Connected to MQTT.");
+  Serial.print("Session present: ");
+  Serial.println(sessionPresent);
   // подписываем ESP32 на топики:
  uint16_t packetIdSub2 = mqttClient.subscribe("phone/Counter", 0); //топик счетчика электроэнергии
  uint16_t packetIdSub3 = mqttClient.subscribe("phone/Went", 0);//топик мотора вытяжки
@@ -243,6 +248,7 @@ mqttClient.onUnsubscribe(onMqttUnsubscribe);
 mqttClient.onMessage(onMqttMessage);
 //mqttClient.onPublish(onMqttPublish);
 mqttClient.setServer(MQTT_HOST, MQTT_PORT);
+mqttClient.setCredentials(MQTT_USERNAME, MQTT_PASSWORD);
 
 Serial.println(" ");
 Serial.println("Start_v02.01\r\n");
@@ -256,7 +262,7 @@ pinMode(RELAY,OUTPUT);
 // пуллапим. Кнопки замыкают на GND
 pinMode(LIMSW_X, INPUT_PULLUP);
 //stepper.setRunMode(FOLLOW_POS);
-homing(); // по умолчанию заслонку закрываем
+//homing(); // по умолчанию заслонку закрываем
 }
 
 //Функция закрытия заслонки
@@ -649,26 +655,29 @@ void Read_18b20(byte addr[8], int t){
   }
   celsius = (float)raw / 16.0;
   fahrenheit = celsius * 1.8 + 32.0;
-    if (flag == 1) {
+  //  if (flag == 1) {
   result = String(celsius);
-} else{
-  result = "**.**";
-}
+//} else{
+  //result = "**.**";
+//}
 
 if (t == 15){
   uint16_t packetIdPub2 = mqttClient.publish("Counter/oil_temp", 1, true, result.c_str());
+  Serial.print("температура:");
+  Serial.println(result.c_str());
 }
   return;
 }
 }
 
 void loop() {
+
   //работа с заслонкой
-  vent_open();
+/*  vent_open();
   stepper.tick();
   if(stepper.ready()){
   stepper.disable();
-  }
+} */
 
   // Читаем датчик 18b20
 if ((millis() - T18b20_1) >= period_18b20_1) {
@@ -708,10 +717,14 @@ if ((millis() - dht22) >= period_DHT22) {
     char var1[18];
     var.toCharArray(var1,18);
     uint16_t packetIdPub = mqttClient.publish(var1, 1, true, temp.c_str());
+    Serial.print("температура DHT22:");
+    Serial.println(temp.c_str());
     var = "ESP32Counter/Hum";
     char var2[17];
     var.toCharArray(var2,17);
     packetIdPub = mqttClient.publish(var2, 1, true, hum.c_str());
+    Serial.print("влажность DHT22:");
+    Serial.println(+hum.c_str());
   }
 // конец обработки датчика 1
 
@@ -734,11 +747,15 @@ if (isnan(h) || isnan(t)) {
   char var1[19];
   var.toCharArray(var1,19);
   uint16_t packetIdPub = mqttClient.publish(var1, 1, true, temp.c_str());
+  Serial.print("температура DHT22 №2:");
+  Serial.println(temp.c_str());
   var = "ESP32Counter/Hum2";
   Serial.println(var);
   char var2[18];
   var.toCharArray(var2,18);
   packetIdPub = mqttClient.publish(var2, 1, true, hum.c_str());
+  Serial.print("влажность DHT22 №2:");
+  Serial.println(hum.c_str());
   }
 // конец обработки датчика 2
 }
