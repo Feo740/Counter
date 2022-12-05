@@ -37,8 +37,10 @@ SoftwareSerial RS485Serial(SSerialRx, SSerialTx); // Rx, Tx
 #define MQTT_PASSWORD "ferrari220"
 // концевик заслонки вентиляции
 #define LIMSW_X 16
-long target = 0; // количество шагов до момента открытия заслонки
-
+//long target = 500; // количество шагов до момента открытия заслонки
+String error_flag = "0"; // флаг нахождения заслонки в ошибке 0-работа 1-ошибка
+String open_flag = "1"; // флаг открытой заслонки 1-открыт 0-закрыт
+String went_flag = "1"; // флаг включенного вентилятора 0-вкл 1-откл
 
 /// создаем объекты для управления MQTT-клиентом:
 ///Создаем объект для управления MQTT-клиентом и таймеры, которые понадобятся для повторного подключения к MQTT-брокеру или WiFi-роутеру, если связь вдруг оборвется.
@@ -72,6 +74,8 @@ char incomingBytes[15];
 byte flag = 0;
 byte relay_flag = 1;
 
+
+
 String odometr_data; //строка пробега считанного со счетчика функцией GetOdo
 String voltage_data; // строка значения напряжения считанного функцией GetVoltage по фазе
 String current_data; // строка значения тока считанного функцией GetCurrent по фазе
@@ -87,6 +91,8 @@ unsigned long period_counter = 43200000;//86400000;  ///< таймер для п
 unsigned long p_counter = 0; ///< Техническая переменная счетчика таймера
 unsigned int period_DHT22 = 6000;  ///< таймер для датчика влажности
 unsigned int period_18b20_1 = 6000;  ///< таймер для первого датчика температуры
+unsigned long period_clapan = 10000; //таймер для проверки что заслонка не застряла
+unsigned long p_clapan = 0; ///< Техническая переменная счетчика таймера
 unsigned int period_18b20_read = 500; ///< таймер ожидания преобразования в датчике 18b20
 unsigned long dht22 = 0; ///< Техническая переменная счетчика таймера
 unsigned long T18b20_1 = 0; ///< Техническая переменная счетчика таймера
@@ -161,6 +167,7 @@ void onMqttConnect(bool sessionPresent) {
  uint16_t packetIdSub2 = mqttClient.subscribe("phone/Counter", 0); //топик счетчика электроэнергии
  uint16_t packetIdSub3 = mqttClient.subscribe("phone/Went", 0);//топик мотора вытяжки
  uint16_t packetIdSub4 = mqttClient.subscribe("phone/Went_valve", 0);//топик клапана вытяжки
+ uint16_t packetIdSub5 = mqttClient.subscribe("phone/Zopen", 0);//топик клапана вытяжки
 }
 
 void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
@@ -201,6 +208,15 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
   for (int i = 0; i < len; i++) {
     //Serial.print((char)payload[i]);
     messageTemp += (char)payload[i];
+  }
+  // проверяем, получено ли MQTT-сообщение в топике «phone/Zopen»:
+  if (strcmp(topic, "phone/Zopen") == 0) {
+    if (messageTemp == "1") {
+    vent_open();
+          }
+    if (messageTemp == "0") {
+            homing();
+                }
   }
   // проверяем, получено ли MQTT-сообщение в топике «phone/Counter»:
   if (strcmp(topic, "phone/Counter") == 0) {
@@ -262,17 +278,40 @@ pinMode(RELAY,OUTPUT);
 // пуллапим. Кнопки замыкают на GND
 pinMode(LIMSW_X, INPUT_PULLUP);
 //stepper.setRunMode(FOLLOW_POS);
-//homing(); // по умолчанию заслонку закрываем
+homing(); // по умолчанию заслонку закрываем
 }
 
 //Функция закрытия заслонки
 void homing() {
+  p_clapan = millis();
   if (digitalRead(LIMSW_X)) {       // если концевик X не нажат
     stepper.setSpeed(-100);       // ось Х, -10 шаг/сек
     while (digitalRead(LIMSW_X)) {  // пока кнопка не нажата
       stepper.tick();               // крутим
+      if ((millis()-p_clapan)>=period_clapan){ // проверяем, не застряла ли наша заслонка в закрытом виде
+        // пишем мкутт сообщение об ошибке
+        error_flag = "1";
+        open_flag = "1";
+        //сообщаем об ошибке
+        String var = "ESP32Counter/Zerror";
+        char var1[20];
+        var.toCharArray(var1,20);
+        uint16_t packetIdPub = mqttClient.publish(var1, 1, true, error_flag.c_str());
+        // сообщаем что заслонка осталась открыта
+        var = "ESP32Counter/Zopen";
+        char var2[19];
+        var.toCharArray(var2,19);
+        uint16_t packetIdPub2 = mqttClient.publish(var2, 1, true, open_flag.c_str());
+        break;
+      }
     }
     // кнопка нажалась - покидаем цикл
+    open_flag = "0";
+    // сообщаем, что заслонка закрылась
+    String var = "ESP32Counter/Zopen";
+    char var2[19];
+    var.toCharArray(var2,19);
+    uint16_t packetIdPub = mqttClient.publish(var2, 1, true, open_flag.c_str());
     stepper.disable();                // тормозим, приехали
     stepper.reset(); // сбросить текущую позицию в 0
   }
@@ -280,9 +319,22 @@ void homing() {
 
 //Функция открытия заслонки
 void vent_open(){
-  target = valve_angle*2,5;
-  stepper.setTarget(target);
+  // target = valve_angle*2,5; на будущее, если что-то открывать на угол
+  stepper.setTarget(500);
   stepper.setMaxSpeed(100);
+  while (!stepper.ready()) {  // пока кнопка не нажата
+  stepper.tick();               // крутим
+}
+if(stepper.ready()){
+  stepper.disable();
+  // MQTT сообщение  - заслонка открыта.
+  open_flag = "1";
+  String var = "ESP32Counter/Zopen";
+  char var1[19];
+  var.toCharArray(var1,19);
+  uint16_t packetIdPub = mqttClient.publish(var1, 1, true, open_flag.c_str());
+
+  }
 }
 
 //Функция считывает параметр "потребляемая мощность"
@@ -672,20 +724,13 @@ if (t == 15){
 
 void loop() {
 
-  //работа с заслонкой
-/*  vent_open();
-  stepper.tick();
-  if(stepper.ready()){
-  stepper.disable();
-} */
-
   // Читаем датчик 18b20
 if ((millis() - T18b20_1) >= period_18b20_1) {
     Read_18b20(sensor_oil, 15);
     T18b20_1 = millis(); // обнуляем таймер опроса датчика
           }
 
-// Снятие данных раз в сутки
+// Снятие данных счетчика раз в сутки
 if ((millis() - p_counter) >= period_counter) {
   p_counter = millis();
   odo();
@@ -759,18 +804,43 @@ if (isnan(h) || isnan(t)) {
   }
 // конец обработки датчика 2
 }
+// проверка флага опроса счетчика
 if (flag == 1){
   odo();
   voltage();
   current();
   flag = 0;
   }
-// проверка флага состояния включения вентиляции
+// проверка флага состояния включения вентилятора
 if (relay_flag ==1){
   digitalWrite(RELAY,HIGH); //если флаг 1 реле выключить
+  went_flag = "1";
+  String var = "ESP32Counter/went1";
+  char var2[19];
+  var.toCharArray(var2,19);
+  uint16_t packetIdPub = mqttClient.publish(var2, 1, true, went_flag.c_str());
 }
 if (relay_flag ==0){
+  // если пришло сообщ вкл вентилятор, проверяем открыта ли заслонка и не в ошибке ли она висит
+  if(open_flag=="1" & error_flag=="0"){
   digitalWrite(RELAY,LOW); // если флаг 0 реле включить
+  went_flag = "0";
+  // сообщаем, что заслонка закрылась
+  String var = "ESP32Counter/went1";
+  char var2[19];
+  var.toCharArray(var2,19);
+  uint16_t packetIdPub = mqttClient.publish(var2, 1, true, went_flag.c_str());
+  Serial.println("Went start");
+} else{
+  digitalWrite(RELAY,HIGH); // если флаг 0 реле включить
+  went_flag = "1";
+  // сообщаем, что заслонка закрылась
+  String var = "ESP32Counter/went1";
+  char var2[19];
+  var.toCharArray(var2,19);
+  uint16_t packetIdPub = mqttClient.publish(var2, 1, true, went_flag.c_str());
+  Serial.println("Went stop - error");
+}
 }
 }
 
