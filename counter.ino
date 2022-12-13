@@ -73,7 +73,7 @@ char incomingBytes[15];
 
 byte flag = 0;
 byte relay_flag = 1;
-
+byte open_flag_byte = 2;
 
 
 String odometr_data; //строка пробега считанного со счетчика функцией GetOdo
@@ -211,11 +211,10 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
   }
   // проверяем, получено ли MQTT-сообщение в топике «phone/Zopen»:
   if (strcmp(topic, "phone/Zopen") == 0) {
-    if (messageTemp == "1") {
-    vent_open();
-          }
-    if (messageTemp == "0") {
-            homing();
+    if (messageTemp == "1" && open_flag == "0") {
+    open_flag_byte=1;
+  } else {
+            open_flag_byte = 0;
                 }
   }
   // проверяем, получено ли MQTT-сообщение в топике «phone/Counter»:
@@ -283,12 +282,20 @@ homing(); // по умолчанию заслонку закрываем
 
 //Функция закрытия заслонки
 void homing() {
+  open_flag = "0";
+  // сообщаем, что заслонка закрылась
+  String var = "ESP32Counter/Zopen";
+  char var2[19];
+  var.toCharArray(var2,19);
+  uint16_t packetIdPub = mqttClient.publish(var2, 1, true, open_flag.c_str());
+  stepper.disable();                // тормозим, приехали
+  stepper.reset(); // сбросить текущую позицию в 0
   p_clapan = millis();
   if (digitalRead(LIMSW_X)) {       // если концевик X не нажат
     stepper.setSpeed(-100);       // ось Х, -10 шаг/сек
     while (digitalRead(LIMSW_X)) {  // пока кнопка не нажата
       stepper.tick();               // крутим
-      if ((millis()-p_clapan)>=period_clapan){ // проверяем, не застряла ли наша заслонка в закрытом виде
+      if ((millis()-p_clapan)>=period_clapan){ // проверяем, не застряла ли наша заслонка в открытом виде
         // пишем мкутт сообщение об ошибке
         error_flag = "1";
         open_flag = "1";
@@ -306,19 +313,26 @@ void homing() {
       }
     }
     // кнопка нажалась - покидаем цикл
-    open_flag = "0";
-    // сообщаем, что заслонка закрылась
-    String var = "ESP32Counter/Zopen";
-    char var2[19];
-    var.toCharArray(var2,19);
-    uint16_t packetIdPub = mqttClient.publish(var2, 1, true, open_flag.c_str());
-    stepper.disable();                // тормозим, приехали
-    stepper.reset(); // сбросить текущую позицию в 0
+    //сообщаем об отсутствии ошибки
+    error_flag = "0";
+    String var = "ESP32Counter/Zerror";
+    char var1[20];
+    var.toCharArray(var1,20);
+    uint16_t packetIdPub = mqttClient.publish(var1, 1, true, error_flag.c_str());
+
   }
+  open_flag_byte = 2;
 }
 
 //Функция открытия заслонки
 void vent_open(){
+  // MQTT сообщение  - заслонка открыта.
+  open_flag = "1";
+  String var = "ESP32Counter/Zopen";
+  char var1[19];
+  var.toCharArray(var1,19);
+  uint16_t packetIdPub = mqttClient.publish(var1, 1, true, open_flag.c_str());
+  open_flag_byte = 2;
   // target = valve_angle*2,5; на будущее, если что-то открывать на угол
   stepper.setTarget(500);
   stepper.setMaxSpeed(100);
@@ -327,14 +341,13 @@ void vent_open(){
 }
 if(stepper.ready()){
   stepper.disable();
-  // MQTT сообщение  - заслонка открыта.
-  open_flag = "1";
-  String var = "ESP32Counter/Zopen";
-  char var1[19];
-  var.toCharArray(var1,19);
-  uint16_t packetIdPub = mqttClient.publish(var1, 1, true, open_flag.c_str());
-
   }
+}
+
+void send_mqtt(String value, String addr, int leght){
+  char var1[leght];
+  addr.toCharArray(var1,leght);
+  uint16_t packetIdPub = mqttClient.publish(var1, 1, true, value.c_str());
 }
 
 //Функция считывает параметр "потребляемая мощность"
@@ -724,10 +737,16 @@ if (t == 15){
 
 void loop() {
 
-  // Читаем датчик 18b20
+  // Читаем датчик 18b20 + обновляем заслонку
 if ((millis() - T18b20_1) >= period_18b20_1) {
     Read_18b20(sensor_oil, 15);
     T18b20_1 = millis(); // обнуляем таймер опроса датчика
+    if (digitalRead(LIMSW_X && open_flag_byte == 0)){//если концевик не нажат, а из HA пришла команда закрыть
+      homing();
+    }
+    send_mqtt(open_flag, "ESP32Counter/Zopen", 19); //отправляем регулярно состояние заслонки
+
+    //раз в 6с отпр топик состояния заслонки.
           }
 
 // Снятие данных счетчика раз в сутки
@@ -842,9 +861,13 @@ if (relay_flag ==0){
   Serial.println("Went stop - error");
 }
 }
+if (open_flag_byte == 1){
+  vent_open();
 }
-
-
+if (open_flag_byte == 0){
+  homing();
+}
+}
 /*
 String getSerialNumber(int netAdr)
 {
