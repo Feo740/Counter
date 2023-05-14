@@ -88,7 +88,7 @@ String power_data3; // строка значения  мощности по фа
 //String voltage_data2; // строка значения напряжения считанного функцией GetVoltage по фазе 2
 //String voltage_data3; // строка значения напряжения считанного функцией GetVoltage по фазе 3
 // дней*(24 часов в сутках)*(60 минут в часе)*(60 секунд в минуте)*(1000 миллисекунд в секунде)
-const unsigned long period_counter PROGMEM = 43200000;//86400000;  ///< таймер для проверки счетчика, раз в сутки
+unsigned long period_counter = 43200000;//86400000;  ///< таймер для проверки счетчика, раз в сутки
 unsigned long p_counter = 0; ///< Техническая переменная счетчика таймера
 unsigned int period_DHT22 = 60000;  ///< таймер для датчика влажности
 unsigned int period_18b20_1 = 60000;  ///< таймер для первого датчика температуры
@@ -348,8 +348,10 @@ if(stepper.ready()){
   }
 }
 
-void send_mqtt(String &value, const char* addr){
-  uint16_t packetIdPub = mqttClient.publish(addr, 1, true, value.c_str());
+void send_mqtt(String value, String addr, int leght){
+  char var1[leght];
+  addr.toCharArray(var1,leght);
+  uint16_t packetIdPub = mqttClient.publish(var1, 1, true, value.c_str());
 }
 
 //Функция считывает параметр "потребляемая мощность"
@@ -746,13 +748,13 @@ if ((millis() - T18b20_1) >= period_18b20_1) {
     if (digitalRead(LIMSW_X && open_flag_byte == 0)){//если концевик не нажат, а из HA пришла команда закрыть
       homing();
     }
-    send_mqtt(open_flag, "ESP32Counter/Zopen"); //отправляем регулярно состояние заслонки
+    send_mqtt(open_flag, "ESP32Counter/Zopen", 19); //отправляем регулярно состояние заслонки
 
     //раз в 6с отпр топик состояния заслонки.
           }
 
 // Снятие данных счетчика раз в сутки
-if ((millis() - p_counter) >= pgm_read_dword(period_counter)) {
+if ((millis() - p_counter) >= period_counter) {
   p_counter = millis();
   odo();
 }
