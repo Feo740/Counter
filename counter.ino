@@ -14,6 +14,7 @@ extern "C" {
 //Подключаем датчик влажности
 #define DHTPIN 14     ///< контакт, к которому подключается DHT
 #define DHTPIN2 23     ///< контакт, к которому подключается DHT
+//#define DHTRELAYPIN 35 // выбираем пин для урпавления питанием датчиков влажности.
 #define DHTTYPE DHT22   ///<  DHT 11
 #define TEMPSENSORPIN 15 ///< контакт для подключения датчика температуры
 OneWire ds(TEMPSENSORPIN);
@@ -89,14 +90,16 @@ String power_data3; // строка значения  мощности по фа
 // дней*(24 часов в сутках)*(60 минут в часе)*(60 секунд в минуте)*(1000 миллисекунд в секунде)
 const unsigned long period_counter PROGMEM = 43200000;//86400000;  ///< таймер для проверки счетчика, раз в сутки
 unsigned long p_counter = 0; ///< Техническая переменная счетчика таймера
-unsigned int period_DHT22 = 6000;  ///< таймер для датчика влажности
-unsigned int period_18b20_1 = 6000;  ///< таймер для первого датчика температуры
+unsigned int period_DHT22 = 60000;  ///< таймер для датчика влажности
+unsigned int period_18b20_1 = 60000;  ///< таймер для первого датчика температуры
 unsigned long period_clapan = 10000; //таймер для проверки что заслонка не застряла
+unsigned long period_voltage = 5000; // таймер для снятия показаний напряжения и тока
 unsigned long p_clapan = 0; ///< Техническая переменная счетчика таймера
 unsigned int period_18b20_read = 500; ///< таймер ожидания преобразования в датчике 18b20
 unsigned long dht22 = 0; ///< Техническая переменная счетчика таймера
 unsigned long T18b20_1 = 0; ///< Техническая переменная счетчика таймера
 unsigned long read_18b20 = 0; ///< Техническая переменная счетчика таймера
+unsigned long voltageP = 0; ///< Техническая переменная счетчика таймера для снятия напр и тока
 
 // логин и пароль сети WiFi
 //const char* ssid = "MikroTik-1EA2D2";
@@ -273,6 +276,7 @@ p_counter = millis();
 dht.begin();
 dht2.begin();
 pinMode(RELAY,OUTPUT);
+//pinMode(DHTRELAYPIN,OUTPUT); //задаем пин реле датчиков влажности как выход
 
 // пуллапим. Кнопки замыкают на GND
 pinMode(LIMSW_X, INPUT_PULLUP);
@@ -753,13 +757,17 @@ if ((millis() - p_counter) >= pgm_read_dword(period_counter)) {
   odo();
 }
 
-// Снятие данных по таймеру с датчика влажности
-if ((millis() - dht22) >= period_DHT22) {
-  dht22 = millis();
-
+// снятие данных напряжения и тока по таймеру
+if ((millis() - voltageP) >= period_voltage) {
+  voltageP = millis();
   voltage();
   delay(500);
   current();
+}
+// Снятие данных по таймеру с датчика влажности
+if ((millis() - dht22) >= period_DHT22) {
+//  digitalWrite(DHTRELAYPIN,LOW); // подаем питание на датчики
+  dht22 = millis();
 
 // обработка датчика 1
   float h = dht.readHumidity(); // считывание данных о температуре и влажности датчика1
@@ -820,6 +828,7 @@ if (isnan(h) || isnan(t)) {
   Serial.println(hum.c_str());
   }
 // конец обработки датчика 2
+//  digitalWrite(DHTRELAYPIN,HIGH); // снимаем питание с датчиков
 }
 // проверка флага опроса счетчика
 if (flag == 1){
