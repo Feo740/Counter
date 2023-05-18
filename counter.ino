@@ -14,7 +14,7 @@ extern "C" {
 //Подключаем датчик влажности
 #define DHTPIN 14     ///< контакт, к которому подключается DHT
 #define DHTPIN2 23     ///< контакт, к которому подключается DHT
-//#define DHTRELAYPIN 35 // выбираем пин для урпавления питанием датчиков влажности.
+#define DHTRELAYPIN 35 // выбираем пин для управления питанием датчиков влажности.
 #define DHTTYPE DHT22   ///<  DHT 11
 #define TEMPSENSORPIN 15 ///< контакт для подключения датчика температуры
 OneWire ds(TEMPSENSORPIN);
@@ -766,7 +766,7 @@ if ((millis() - voltageP) >= period_voltage) {
 }
 // Снятие данных по таймеру с датчика влажности
 if ((millis() - dht22) >= period_DHT22) {
-//  digitalWrite(DHTRELAYPIN,LOW); // подаем питание на датчики
+  digitalWrite(DHTRELAYPIN,LOW); // подаем питание на датчики
   dht22 = millis();
 
 // обработка датчика 1
@@ -828,7 +828,7 @@ if (isnan(h) || isnan(t)) {
   Serial.println(hum.c_str());
   }
 // конец обработки датчика 2
-//  digitalWrite(DHTRELAYPIN,HIGH); // снимаем питание с датчиков
+  digitalWrite(DHTRELAYPIN,HIGH); // снимаем питание с датчиков
 }
 // проверка флага опроса счетчика
 if (flag == 1){
